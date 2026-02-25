@@ -1,0 +1,121 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// User model - Stores user authentication and profile information
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  username  String   @unique
+  password  String   // Hashed with bcrypt
+  role      Role     @default(ENGINEER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  createdIncidents Incident[]            @relation("IncidentCreator")
+  participants     IncidentParticipant[]
+  messages         Message[]
+
+  @@map("users")
+}
+
+// Incident model - Represents a "War Room" for an incident
+model Incident {
+  id          String         @id @default(uuid())
+  title       String
+  description String?
+  status      IncidentStatus @default(ACTIVE)
+  severity    Severity       @default(MEDIUM)
+  createdById String
+  createdAt   DateTime       @default(now())
+  resolvedAt  DateTime?
+  updatedAt   DateTime       @updatedAt
+
+  // Relations
+  createdBy    User                  @relation("IncidentCreator", fields: [createdById], references: [id])
+  participants IncidentParticipant[]
+  messages     Message[]
+  summary      IncidentSummary?      // One-to-one relation with AI summary
+
+  @@index([status, createdAt])
+  @@map("incidents")
+}
+
+// IncidentParticipant - Junction table for users in incidents
+model IncidentParticipant {
+  id         String   @id @default(uuid())
+  userId     String
+  incidentId String
+  joinedAt   DateTime @default(now())
+
+  // Relations
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  incident Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, incidentId])
+  @@index([incidentId])
+  @@map("incident_participants")
+}
+
+// Message model - Chat messages within an incident
+model Message {
+  id         String   @id @default(uuid())
+  content    String
+  incidentId      String
+  userId          String
+  createdAt       DateTime @default(now())
+  isTimelineEvent Boolean  @default(false)
+  eventCategory   String?
+
+  // Relations
+  incident Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id])
+
+  @@index([incidentId, createdAt])
+  @@map("messages")
+}
+
+// IncidentSummary - AI-generated post-mortem reports
+model IncidentSummary {
+  id               String   @id @default(uuid())
+  incidentId       String   @unique
+  summary          String   @db.Text // Full AI-generated summary
+  keyEvents        Json     // Array of critical events
+  rootCause        String?  @db.Text
+  resolutionSteps  Json     // Array of actions taken
+  recommendations  Json     // Array of future improvements
+  generatedAt      DateTime @default(now())
+  generatedBy      String   @default("gemini-1.5-pro") // AI model used
+
+  // Relations
+  incident Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@index([incidentId])
+  @@map("incident_summaries")
+}
+
+// Enums
+enum Role {
+  ENGINEER
+  MANAGER
+  ADMIN
+}
+
+enum IncidentStatus {
+  ACTIVE
+  INVESTIGATING
+  RESOLVED
+  CLOSED
+}
+
+enum Severity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
