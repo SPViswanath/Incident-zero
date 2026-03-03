@@ -26,7 +26,7 @@ export const createIncident = async (req, res) => {
     });
   } catch (error) {
     console.error('Error creating incident:', error);
-    res.status(500).json({ message: 'Server error creating incident' });
+    res.status(500).json({ message: error.message || 'Server error creating incident' });
   }
 };
 
@@ -37,7 +37,10 @@ export const getIncidents = async (req, res) => {
   try {
     const incidents = await prisma.incident.findMany({
       where: {
-        status: 'ACTIVE'
+        OR: [
+          { createdById: req.userId },
+          { participants: { some: { userId: req.userId } } }
+        ]
       },
       orderBy: {
         createdAt: 'desc'
@@ -59,7 +62,7 @@ export const getIncidents = async (req, res) => {
     res.status(200).json(incidents);
   } catch (error) {
     console.error('Error fetching incidents:', error);
-    res.status(500).json({ message: 'Server error fetching incidents' });
+    res.status(500).json({ message: error.message || 'Server error fetching incidents' });
   }
 };
 
@@ -72,10 +75,18 @@ export const resolveIncident = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const incident = await prisma.incident.findUnique({ where: { id } });
+    const incident = await prisma.incident.findFirst({ 
+      where: { 
+        id,
+        OR: [
+          { createdById: req.userId },
+          { participants: { some: { userId: req.userId } } }
+        ]
+      } 
+    });
     
     if (!incident) {
-      return res.status(404).json({ message: 'Incident not found' });
+      return res.status(403).json({ message: 'Access denied or incident not found' });
     }
 
     if (incident.status === 'RESOLVED' || incident.status === 'CLOSED') {
@@ -113,6 +124,21 @@ export const getIncidentSummary = async (req, res) => {
   try {
     const { id } = req.params;
 
+    // Check access first
+    const incident = await prisma.incident.findFirst({
+      where: {
+        id,
+        OR: [
+          { createdById: req.userId },
+          { participants: { some: { userId: req.userId } } }
+        ]
+      }
+    });
+
+    if (!incident) {
+      return res.status(403).json({ message: 'Access denied or incident not found' });
+    }
+
     const summary = await prisma.incidentSummary.findUnique({
       where: { incidentId: id }
     });
@@ -134,6 +160,21 @@ export const getIncidentSummary = async (req, res) => {
 export const getIncidentTimeline = async (req, res) => {
   try {
     const { id } = req.params;
+
+    // Check access first
+    const incidentAccess = await prisma.incident.findFirst({
+      where: {
+        id,
+        OR: [
+          { createdById: req.userId },
+          { participants: { some: { userId: req.userId } } }
+        ]
+      }
+    });
+
+    if (!incidentAccess) {
+      return res.status(403).json({ message: 'Access denied or incident not found' });
+    }
 
     const timeline = await prisma.message.findMany({
       where: {
