@@ -27,10 +27,15 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response && error.response.status === 401) {
-      // Clear token and force reload (or handle via Context)
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.href = '/login';
+      // Do not force reload if the 401 comes from the login or register attempts themselves
+      const isAuthRequest = error.config && error.config.url && (error.config.url.includes('/auth/login') || error.config.url.includes('/auth/register'));
+      
+      if (!isAuthRequest) {
+        // Clear token and force reload (or handle via Context)
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }
