@@ -1,5 +1,5 @@
 import express from 'express';
-import { createIncident, getIncidents, resolveIncident, getIncidentSummary, getIncidentTimeline } from '../controllers/incidentController.js';
+import { createIncident, getIncidents, getIncidentById, resolveIncident, getIncidentSummary, getAllSummaries, getIncidentTimeline } from '../controllers/incidentController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
@@ -11,6 +11,8 @@ router.route('/')
   .post(createIncident)
   .get(getIncidents);
 
+router.get('/reports/all', getAllSummaries);
+router.get('/:id', getIncidentById);
 router.patch('/:id/resolve', resolveIncident);
 router.get('/:id/summary', getIncidentSummary);
 router.get('/:id/timeline', getIncidentTimeline);

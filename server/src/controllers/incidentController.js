@@ -5,7 +5,7 @@ import prisma from '../config/db.js';
 // @access  Private
 export const createIncident = async (req, res) => {
   try {
-    const { title, description, severity } = req.body;
+    const { title, description, severity, category } = req.body;
     
     if (!title) {
       return res.status(400).json({ message: 'Please provide a title for the incident' });
@@ -16,6 +16,7 @@ export const createIncident = async (req, res) => {
         title,
         description,
         severity: severity || 'MEDIUM',
+        category: category || 'SOFTWARE',
         createdById: req.userId,
       },
     });
@@ -63,6 +64,56 @@ export const getIncidents = async (req, res) => {
   } catch (error) {
     console.error('Error fetching incidents:', error);
     res.status(500).json({ message: error.message || 'Server error fetching incidents' });
+  }
+};
+
+// @desc    Get incident by ID
+// @route   GET /api/incidents/:id
+// @access  Private
+export const getIncidentById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const incident = await prisma.incident.findUnique({
+      where: { id },
+      include: {
+        createdBy: { select: { id: true, username: true, email: true } },
+        participants: { include: { user: { select: { id: true, username: true, email: true } } } },
+      }
+    });
+
+    if (!incident) {
+      return res.status(404).json({ message: 'Incident not found' });
+    }
+
+    // Verify access
+    const isCreator = incident.createdById === req.userId;
+    const isParticipant = incident.participants.some(p => p.userId === req.userId);
+    
+    if (!isCreator && !isParticipant) {
+      // Auto-join if they have the link and are logged in
+      await prisma.incidentParticipant.create({
+        data: {
+          userId: req.userId,
+          incidentId: id
+        }
+      });
+      
+      // Re-fetch with the new participant included
+      const updatedIncident = await prisma.incident.findUnique({
+        where: { id },
+        include: {
+          createdBy: { select: { id: true, username: true, email: true } },
+          participants: { include: { user: { select: { id: true, username: true, email: true } } } },
+        }
+      });
+      
+      return res.status(200).json(updatedIncident);
+    }
+
+    res.status(200).json(incident);
+  } catch (error) {
+    console.error('Error fetching incident:', error);
+    res.status(500).json({ message: 'Server error fetching incident' });
   }
 };
 
@@ -151,6 +202,47 @@ export const getIncidentSummary = async (req, res) => {
   } catch (error) {
     console.error('Error fetching incident summary:', error);
     res.status(500).json({ message: 'Server error fetching summary' });
+  }
+};
+
+// @desc    Get all AI Summaries (Reports)
+// @route   GET /api/incidents/reports/all
+// @access  Private
+export const getAllSummaries = async (req, res) => {
+  try {
+    const summaries = await prisma.incidentSummary.findMany({
+      where: {
+        incident: {
+          OR: [
+            { createdById: req.userId },
+            { participants: { some: { userId: req.userId } } }
+          ]
+        }
+      },
+      include: {
+        incident: {
+          select: {
+            id: true,
+            title: true,
+            severity: true,
+            status: true,
+            createdAt: true,
+            resolvedAt: true,
+            createdBy: {
+              select: { username: true }
+            }
+          }
+        }
+      },
+      orderBy: {
+        generatedAt: 'desc'
+      }
+    });
+
+    res.status(200).json(summaries);
+  } catch (error) {
+    console.error('Error fetching all summaries:', error);
+    res.status(500).json({ message: 'Server error fetching reports' });
   }
 };
 

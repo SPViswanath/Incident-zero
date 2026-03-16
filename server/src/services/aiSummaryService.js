@@ -14,21 +14,23 @@ export const generateSummary = async (incidentId) => {
               select: { username: true, role: true }
             }
           }
-        },
+        }
       }
     });
 
-    if (!incident) throw new Error('Incident not found');
-    if (incident.messages.length === 0) throw new Error('No chat history to summarize');
+    if (!incident) throw new Error('Incident not found for summary generation');
+    
+    // If no messages, just provide a basic fallback so the frontend doesn't timeout forever
+    const hasMessages = incident.messages && incident.messages.length > 0;
 
     // 2. Format Context for Gemini
-    const chatLog = incident.messages.map(msg => {
+    const chatLog = hasMessages ? incident.messages.map(msg => {
       let prefix = `[${msg.createdAt.toISOString()}] ${msg.user.username} (${msg.user.role}):`;
       if (msg.isTimelineEvent) {
         prefix = `[CRITICAL MILESTONE: ${msg.eventCategory}] ${prefix}`;
       }
       return `${prefix} ${msg.content}`;
-    }).join('\n');
+    }).join('\n') : '';
 
     const prompt = `
       You are an expert Site Reliability Engineer (SRE).
@@ -39,7 +41,7 @@ export const generateSummary = async (incidentId) => {
       Incident Description: ${incident.description || 'N/A'}
       
       Chat Log:
-      ${chatLog}
+      ${hasMessages ? chatLog : 'No communication recorded for this incident yet.'}
       
       Provide a comprehensive Post-Mortem. 
       IMPORTANT: You must respond in pure JSON format matching exactly this structure:

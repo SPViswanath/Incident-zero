@@ -31,6 +31,7 @@ model Incident {
   description String?
   status      IncidentStatus @default(ACTIVE)
   severity    Severity       @default(MEDIUM)
+  category    Category       @default(SOFTWARE)
   createdById String
   createdAt   DateTime       @default(now())
   resolvedAt  DateTime?
@@ -118,4 +119,10 @@ enum Severity {
   MEDIUM
   HIGH
   CRITICAL
+}
+
+enum Category {
+  HARDWARE
+  SOFTWARE
+  SECURITY
 }

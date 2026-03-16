@@ -1,4 +1,4 @@
-import { addUserToRoom, removeUserFromRoom } from '../services/presenceService.js';
+import { addUserToRoom, removeUserFromRoom, getActiveUsersInRoom } from '../services/presenceService.js';
 import { parseCommand } from '../services/messageService.js';
 import prisma from '../config/db.js';
 
@@ -11,8 +11,9 @@ export const handleChatEvents = (io, socket) => {
     // Update Redis presence
     await addUserToRoom(incidentId, userId);
     
-    // Broadcast to the room that a user joined (optional, good for frontend UI)
-    io.to(incidentId).emit('user-joined', { userId, incidentId });
+    // Broadcast active users
+    const activeUsers = await getActiveUsersInRoom(incidentId);
+    io.to(incidentId).emit('presence-update', activeUsers);
   });
 
   // Leave an incident room (explicit leave)
@@ -23,38 +24,46 @@ export const handleChatEvents = (io, socket) => {
     // Update Redis presence
     await removeUserFromRoom(incidentId, userId);
     
-    // Broadcast to the room that a user left
-    io.to(incidentId).emit('user-left', { userId, incidentId });
+    // Broadcast active users
+    const activeUsers = await getActiveUsersInRoom(incidentId);
+    io.to(incidentId).emit('presence-update', activeUsers);
   });
 
   // Send a real-time message
   socket.on('send-message', async (data) => {
-    const { incidentId, userId, content } = data;
+    const { incidentId, userId, user, content } = data;
     
     try {
       const { isTimelineEvent, eventCategory, cleanContent } = parseCommand(content);
 
-      // 1. Save the message to the database via Prisma
-      const message = await prisma.message.create({
+      // 1. Construct an optimistic message object immediately
+      const optimisticMessage = {
+        id: `temp-${Date.now()}`,
+        content: cleanContent,
+        incidentId,
+        userId,
+        isTimelineEvent,
+        eventCategory,
+        createdAt: new Date().toISOString(),
+        user: user || { id: userId, username: 'User' }
+      };
+
+      // 2. Broadcast INSTANTLY to everyone in the room (including sender)
+      io.to(incidentId).emit('new-message', optimisticMessage);
+
+      // 3. Save to database asynchronously (Background task)
+      prisma.message.create({
         data: {
           content: cleanContent,
           incidentId,
           userId,
           isTimelineEvent,
           eventCategory
-        },
-        include: {
-          user: {
-            select: { id: true, username: true, email: true }
-          }
         }
-      });
+      }).catch(err => console.error('Background DB save failed:', err));
 
-      // 2. Broadcast the fully populated message to everyone in the room
-      io.to(incidentId).emit('new-message', message);
     } catch (error) {
       console.error('Error handling send-message event:', error);
-      // Optional: emit an error back to the sender
       socket.emit('message-error', { error: 'Failed to send message' });
     }
   });
